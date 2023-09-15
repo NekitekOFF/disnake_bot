@@ -1,0 +1,99 @@
+import disnake
+from disnake.ext import commands
+import disnake.ext.commands.errors as discord_errors
+import youtube_dl
+
+intents = disnake.Intents.default()
+intents.members = True
+
+bot = commands.Bot(command_prefix='!', intents=intents)
+
+# Определите ваш токен бота здесь
+TOKEN = 'YOUR_BOT_TOKEN'
+
+# Конфигурация для youtube-dl
+ydl_opts = {
+    'format': 'bestaudio/best',
+    'postprocessors': [{
+        'key': 'FFmpegExtractAudio',
+        'preferredcodec': 'mp3',
+        'preferredquality': '192',
+    }],
+}
+
+# Словарь для хранения уровней пользователей (user_id: level)
+user_levels = {}
+
+@bot.event
+async def on_ready():
+    print(f'Бот {bot.user.name} готов к работе')
+
+@bot.command()
+async def hello(ctx):
+    await ctx.send('Привет, мир!')
+
+# Команда для бана пользователя
+@bot.command()
+@commands.has_permissions(ban_members=True)
+async def ban(ctx, member: disnake.Member, *, reason=None):
+    await member.ban(reason=reason)
+    await ctx.send(f'{member.mention} был забанен.')
+
+# Команда для кика пользователя
+@bot.command()
+@commands.has_permissions(kick_members=True)
+async def kick(ctx, member: disnake.Member, *, reason=None):
+    await member.kick(reason=reason)
+    await ctx.send(f'{member.mention} был кикнут.')
+
+# Команда для мута пользователя
+@bot.command()
+@commands.has_permissions(manage_messages=True)
+async def mute(ctx, member: disnake.Member, *, reason=None):
+    muted_role = disnake.utils.get(ctx.guild.roles, name='Muted')
+    if not muted_role:
+        muted_role = await ctx.guild.create_role(name='Muted')
+        for channel in ctx.guild.channels:
+            await channel.set_permissions(muted_role, send_messages=False)
+    await member.add_roles(muted_role, reason=reason)
+    await ctx.send(f'{member.mention} был замучен.')
+
+# Команда для отправки сообщения в определенный канал
+@bot.command()
+async def send_message(ctx, channel: disnake.TextChannel, *, message):
+    await channel.send(message)
+
+# Автоматическая отправка видео с YouTube
+@tasks.loop(hours=24)  # Пример: каждые 24 часа
+async def send_youtube_video():
+    channel_id = 123456789012345678  # Замените на ID канала назначения
+    channel = bot.get_channel(channel_id)
+    if channel:
+        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info('https://www.youtube.com/user/YourChannel/videos', download=False)
+            url = info['entries'][0]['url']
+            await channel.send(f'Новое видео: {url}')
+
+@send_youtube_video.before_loop
+async def before_send_youtube_video():
+    await bot.wait_until_ready()
+
+# Запуск автоматической отправки видео
+send_youtube_video.start()
+
+# Обработчик события при отправке сообщения
+@bot.event
+async def on_message(message):
+    if not message.author.bot:  # Игнорируем сообщения ботов
+        author_id = str(message.author.id)
+        if author_id not in user_levels:
+            user_levels[author_id] = 1
+        else:
+            user_levels[author_id] += 1
+
+        # Ваша логика обновления уровней пользователя
+        # Здесь вы можете определить, как часто обновлять уровень и что делать при достижении определенных условий
+
+    await bot.process_commands(message)
+
+bot.run(TOKEN)
